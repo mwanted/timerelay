@@ -10,7 +10,7 @@
 #define CYCLES 10
 #define BUFFLEN 20
 #define INITFLAG 0x10
-#define INITDATA 0xFA
+#define INITDATA 0xA0 + CHANNELS
 #define EEPROMOFFSET 0x20
 
 #include <EEPROM.h>
@@ -187,7 +187,7 @@ ISR(PCINT0_vect) {
         state[channel].count++;
       }
       if (state[channel].count > CYCLES) {
-        state[channel].off_delay = settings[channel].off_delay*10;
+        state[channel].off_delay = settings[channel].off_delay;
         state[channel].count = 0;
       }
       state[channel].timemillis = now;  
@@ -213,37 +213,36 @@ void setup() {
   readEEPROM();
   pinMode(13,OUTPUT);
   pinMode(13,LOW);
-  pinMode(2,OUTPUT);
-  pinMode(3,OUTPUT);
-  digitalWrite(2,LOW);
-  digitalWrite(3,LOW);
-  pinMode(8,INPUT_PULLUP);
-  pinMode(9,INPUT_PULLUP);
+  for (byte i = 0; i < CHANNELS; i++) {
+    pinMode(i+2,OUTPUT);
+    digitalWrite(i+2,LOW);
+    pinMode(i+8,INPUT_PULLUP);
+  }
+  cli(); 
+
   pin_mask = bits(CHANNELS);
   PCICR  |= 0b00000001;
   PCMSK0 |= pin_mask;
 
-    cli(); // отключить глобальные прерывания
-    TCCR1A = 0; // установить регистры в 0
-    TCCR1B = 0; 
+  TCCR1A = 0; 
+  TCCR1B = 0; 
 
-    OCR1A = 15624; // установка регистра совпадения
-    TCCR1B |= (1 << WGM12); // включение в CTC режим
+  OCR1A = 15624; // регистр совпадения
+  TCCR1B |= (1 << WGM12); // включение в CTC режим
 
-    // Установка битов CS10 и CS12 на коэффициент деления 1024
-    TCCR1B |= (1 << CS10);
-    TCCR1B |= (1 << CS12);
+  // Установка битов CS10 и CS12 на коэффициент деления 1024
+  TCCR1B |= (1 << CS10) | (1 << CS12);
 
-    TIMSK1 |= (1 << OCIE1A);  // включение прерываний по совпадению
-    sei(); // включить глобальные прерывания
+  TIMSK1 |= (1 << OCIE1A);  // прерывание по совпадению
 
+  sei(); 
 }
 
 void loop() {
   byte m0,n1;
   for (byte i = 0; i < CHANNELS; i++) {
     state[i].mode = ~bitRead(settings[i].mode,1) & (bitRead(settings[i].mode,0) | state[i].off_delay > 0);
+    digitalWrite(i+2,state[i].mode);
   }
   commandif();
-  delay(99);
 }
