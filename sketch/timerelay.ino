@@ -1,27 +1,25 @@
-// TODO: 
-// ***1. Удобоваримо выдавать текущее состояние, включакя оставшееся время.
-// ***2. Переписать чтение команд на неблокитующий способ. Собирать строку до возникновения перевода строки и потом ее анализировать.
-// 3. Сделать регулируемый "таймаут" на срабатывание, чтобы исключить включение на коротком свете.
-// ***4. Предусмотреть несколько каналаов.
-// ***5. Убрать настройки в массив структур с разделением по каналам. 
-// ???6. Предусмотреть режим "pin-change"
-
 #define CHANNELS 2
-#define CYCLES 10
 #define BUFFLEN 20
 #define INITFLAG 0x10
-#define INITDATA 0xA0 + CHANNELS
+#define INITDATA 0xB0 + CHANNELS
 #define EEPROMOFFSET 0x20
+
+#define DEF_GUARD_TIME 2
+#define DEF_SHORT_TIME 10
+#define DEF_OFF_DELAY 600
+#define DEF_MODE 2 
 
 #include <EEPROM.h>
 
 struct CHANNEL {
-  unsigned int on_delay, off_delay;
-  byte mode;
+  unsigned int guard_time; // время в секундах до реакции.
+  unsigned int short_time; // время в секундах "короткого включения" -- выключаем канал сразу.
+  unsigned int off_delay;  // время в секундах, которое должен проработать канал после появления "длинного" сигнала.
+  byte mode;               // режим работы канала 0 -- авто, 1 -- всегда вкл, 2 всегда выкл)
 };
 
 struct STATE {
-  unsigned int on_delay, off_delay;
+  unsigned int off_delay;
   uint8_t mode;
   unsigned int count;
   unsigned long timemillis;
@@ -31,19 +29,43 @@ volatile CHANNEL settings[CHANNELS];
 volatile STATE state[CHANNELS];
 volatile byte pin_mask = 0;
 
+void writeEEPROM() {
+  EEPROM.put(EEPROMOFFSET,settings);
+  EEPROM.update(INITFLAG,INITDATA);
+  delay(1000);
+}
+
+void readEEPROM() {
+  int flag = EEPROM.read(INITFLAG);
+  delay(1000);
+  if (flag == INITDATA) {
+    Serial.println("Reading defaults...");
+    EEPROM.get(EEPROMOFFSET,settings);
+  } else {
+    Serial.println("Writing defaults...");
+    for (int i = 0; i < CHANNELS; i++) {
+      settings[i].guard_time = DEF_GUARD_TIME; 
+      settings[i].short_time = DEF_SHORT_TIME; 
+      settings[i].off_delay = DEF_OFF_DELAY; 
+      settings[i].mode = DEF_MODE;
+    }
+    writeEEPROM();
+  }
+}
+
 void printSettings() {
   char buffer[40];
   for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: on_delay:  %i",'A'+i,settings[i].on_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: off_delay: %i",'A'+i,settings[i].off_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: mode:      %i",'A'+i,settings[i].mode); Serial.println(buffer);
+    sprintf(buffer,"%c: guard_time: %i",'A'+i,settings[i].guard_time); Serial.println(buffer);
+    sprintf(buffer,"%c: short_time: %i",'A'+i,settings[i].short_time); Serial.println(buffer);
+    sprintf(buffer,"%c: off_delay:  %i",'A'+i,settings[i].off_delay); Serial.println(buffer);
+    sprintf(buffer,"%c: mode:       %i",'A'+i,settings[i].mode); Serial.println(buffer);
   }
 }
 
 void printState() {
   char buffer[40];
   for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: on_delay:  %i",'A'+i,state[i].on_delay); Serial.println(buffer);
     sprintf(buffer,"%c: off_delay: %i",'A'+i,state[i].off_delay); Serial.println(buffer);
     sprintf(buffer,"%c: mode:      %i",'A'+i,state[i].mode); Serial.println(buffer);
     sprintf(buffer,"%c: count:     %i",'A'+i,state[i].count); Serial.println(buffer);
@@ -102,7 +124,7 @@ bool parseCommand(char *command) {
     case 'T':
       return (channel < CHANNELS) && parseInteger(&settings[channel].off_delay,&command[2]);
     case 'D':
-      return (channel < CHANNELS) && parseInteger(&settings[channel].on_delay,&command[2]);
+      return (channel < CHANNELS) && parseInteger(&settings[channel].guard_time,&command[2]);
     case 'M':
       return (channel < CHANNELS) && parseMode(&settings[channel].mode,command[2]);
     case 'Q':
@@ -114,34 +136,10 @@ bool parseCommand(char *command) {
     case 'W':
       writeEEPROM();
       return true;
-    case 'B':
-//      debug = !debug;
-      return true;
     case 'G':
       return (channel < CHANNELS) && parseGo(channel,command[2]);
   }
   return false;
-}
-
-void writeEEPROM() {
-  EEPROM.put(EEPROMOFFSET,settings);
-  EEPROM.update(INITFLAG,INITDATA);
-  delay(1000);
-}
-
-void readEEPROM() {
-  int flag = EEPROM.read(INITFLAG);
-  delay(1000);
-  if (flag == INITDATA) {
-    Serial.println("Reading defaults...");
-    EEPROM.get(EEPROMOFFSET,settings);
-  } else {
-    Serial.println("Writing defaults...");
-    for (int i = 0; i < CHANNELS; i++) {
-      settings[i].on_delay = 60; settings[i].off_delay = 600; settings[i].mode = 2;
-    }
-    writeEEPROM();
-  }
 }
 
 void commandif() {
@@ -186,10 +184,6 @@ ISR(PCINT0_vect) {
       if (delta > 8 && delta < 12) {
         state[channel].count++;
       }
-      if (state[channel].count > CYCLES) {
-        state[channel].off_delay = settings[channel].off_delay;
-        state[channel].count = 0;
-      }
       state[channel].timemillis = now;  
     }
   }
@@ -200,6 +194,12 @@ ISR(TIMER1_COMPA_vect) {
   for (byte i = 0; i <  CHANNELS; i++) {
     if (now - state[i].timemillis > 1000) {
       state[i].count = 0;
+    }
+    if (state[i].count > settings[i].guard_time*100) {
+      state[i].off_delay = 2;
+    }
+    if (state[i].count > settings[i].short_time*100) {
+      state[i].off_delay = settings[i].off_delay + 1;
     }
     if (state[i].off_delay > 0) {
       state[i].off_delay--;
@@ -239,7 +239,6 @@ void setup() {
 }
 
 void loop() {
-  byte m0,n1;
   for (byte i = 0; i < CHANNELS; i++) {
     state[i].mode = ~bitRead(settings[i].mode,1) & (bitRead(settings[i].mode,0) | state[i].off_delay > 0);
     digitalWrite(i+2,state[i].mode);
