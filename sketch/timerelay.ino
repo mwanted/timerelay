@@ -39,7 +39,6 @@ void readEEPROM() {
   int flag = EEPROM.read(INITFLAG);
   delay(1000);
   if (flag == INITDATA) {
-    Serial.println("Reading defaults...");
     EEPROM.get(EEPROMOFFSET,settings);
   } else {
     Serial.println("Writing defaults...");
@@ -81,46 +80,83 @@ byte bits(byte exponent)
     return product;
 }
 
-bool parseInteger(unsigned int *data, char *chars) {
+bool parseInteger(unsigned int *data, char *chars, bool zero = false) {
   unsigned int tmp = 0;
   tmp = atoi(chars);
-  if (!tmp) return false;
+  // x1 ⊕ x2x3 ⊕ x1x2x3
+  if (!tmp and !zero and chars[0] != 0) {
+    return false;
+  }
   *data = tmp;
   return true;
 }
 
 bool parseMode(byte *data, char mode) {
-  switch (mode) {
-    case '+':
-      *data = 1;
-      return true;
-    case '-':
-      *data = 2;
-      return true;
-    case '*':
-      *data = 0;
-      return true;
-  }
-  return false;
-}
-
-bool parseGo(byte channel, char command) {
-  switch (command) {
-    case '+':
-      state[channel].off_delay = settings[channel].off_delay;
-      return true;
-    case '-':
-      state[channel].off_delay = 0;
-      return true;
+  mode = mode - '0';
+  if (mode >= 0 and mode < 3) {
+    *data = mode;
+    return true;
   }
   return false;
 }
 
 bool parseCommand(char *command) {
   byte channel;
-  unsigned int tmp;
-  channel = command[1] - 'A';
+  for (char *p = command; *p; ++p) *p = *p > 0x40 && *p < 0x5b ? *p | 0x60 : *p;
   switch (command[0]) {
+    case 'p':
+      // Properties
+      switch (command[1]) {
+        case 's':
+          // set
+          channel = command[2] - 'a';
+          switch (command[3]) {
+            case 'g':
+              // guard time
+              return (channel < CHANNELS) && parseInteger(&settings[channel].guard_time,&command[4]);
+            case 'd':
+              // delay time
+              return (channel < CHANNELS) && parseInteger(&settings[channel].off_delay,&command[4]);
+            case 's':
+              // short time
+              return (channel < CHANNELS) && parseInteger(&settings[channel].short_time,&command[4]);
+            case 'm':
+              // mode
+              return (channel < CHANNELS) && parseMode(&settings[channel].mode,command[4]);
+            default:
+              return false;
+          }
+        case 'g':
+          // get
+          channel = command[2] - 'a';
+          printSettings();
+          return true;
+        case 'w':
+          // write
+          writeEEPROM();
+          return true;
+        case 'r':
+          // read
+          readEEPROM();
+          return true;
+        default:
+          return false;
+      }
+      return false;
+    case 's':
+      // State
+      switch (command[1]) {
+        case 's':
+          // Set
+          channel = command[2] - 'a';
+          return (channel < CHANNELS) && parseInteger(&state[channel].off_delay,&command[3],true);
+        case 'g':
+          // Get
+          printState();
+          return true;
+      }
+  }
+/*  switch (command[0]) {
     case 'T':
       return (channel < CHANNELS) && parseInteger(&settings[channel].off_delay,&command[2]);
     case 'D':
@@ -138,7 +174,7 @@ bool parseCommand(char *command) {
       return true;
     case 'G':
       return (channel < CHANNELS) && parseGo(channel,command[2]);
-  }
+  }*/
   return false;
 }
 
