@@ -55,19 +55,19 @@ void readEEPROM() {
 void printSettings() {
   char buffer[40];
   for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: guard_time: %i",'A'+i,settings[i].guard_time); Serial.println(buffer);
-    sprintf(buffer,"%c: short_time: %i",'A'+i,settings[i].short_time); Serial.println(buffer);
-    sprintf(buffer,"%c: off_delay:  %i",'A'+i,settings[i].off_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: mode:       %i",'A'+i,settings[i].mode); Serial.println(buffer);
+    sprintf(buffer,"%c: guard_time: %u",'A'+i,settings[i].guard_time); Serial.println(buffer);
+    sprintf(buffer,"%c: short_time: %u",'A'+i,settings[i].short_time); Serial.println(buffer);
+    sprintf(buffer,"%c: off_delay:  %u",'A'+i,settings[i].off_delay); Serial.println(buffer);
+    sprintf(buffer,"%c: mode:       %u",'A'+i,settings[i].mode); Serial.println(buffer);
   }
 }
 
 void printState() {
   char buffer[40];
   for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: off_delay: %i",'A'+i,state[i].off_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: mode:      %i",'A'+i,state[i].mode); Serial.println(buffer);
-    sprintf(buffer,"%c: count:     %i",'A'+i,state[i].count); Serial.println(buffer);
+    sprintf(buffer,"%c: off_delay: %u",'A'+i,state[i].off_delay); Serial.println(buffer);
+    sprintf(buffer,"%c: mode:      %u",'A'+i,state[i].mode); Serial.println(buffer);
+    sprintf(buffer,"%c: count:     %u",'A'+i,state[i].count); Serial.println(buffer);
   }  
 }
 
@@ -156,25 +156,6 @@ bool parseCommand(char *command) {
           return true;
       }
   }
-/*  switch (command[0]) {
-    case 'T':
-      return (channel < CHANNELS) && parseInteger(&settings[channel].off_delay,&command[2]);
-    case 'D':
-      return (channel < CHANNELS) && parseInteger(&settings[channel].guard_time,&command[2]);
-    case 'M':
-      return (channel < CHANNELS) && parseMode(&settings[channel].mode,command[2]);
-    case 'Q':
-      printSettings();
-      return true;
-    case 'S':
-      printState();
-      return true;
-    case 'W':
-      writeEEPROM();
-      return true;
-    case 'G':
-      return (channel < CHANNELS) && parseGo(channel,command[2]);
-  }*/
   return false;
 }
 
@@ -219,6 +200,7 @@ ISR(PCINT0_vect) {
       delta = now - state[channel].timemillis;
       if (delta > 8 && delta < 12) {
         state[channel].count++;
+        if (state[channel].count > settings[channel].short_time*100 + 1) state[channel].count = settings[channel].short_time*100 + 1;
       }
       state[channel].timemillis = now;  
     }
@@ -245,7 +227,7 @@ ISR(TIMER1_COMPA_vect) {
 
 void setup() {
   Serial.begin(57600);
-  Serial.println("Starting...");
+  Serial.print("Starting... ");
   readEEPROM();
   pinMode(13,OUTPUT);
   pinMode(13,LOW);
@@ -272,6 +254,7 @@ void setup() {
   TIMSK1 |= (1 << OCIE1A);  // прерывание по совпадению
 
   sei(); 
+  Serial.println("Done.");
 }
 
 void loop() {
