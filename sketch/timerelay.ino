@@ -20,7 +20,7 @@ struct CHANNEL {
 
 struct STATE {
   unsigned int off_delay;
-  uint8_t mode;
+  byte mode;
   unsigned int count;
   unsigned long timemillis;
 };
@@ -165,13 +165,12 @@ void commandif() {
   char incomingChar;
   if (Serial.available() > 0) {
     incomingChar = Serial.read();
-    Serial.print(incomingChar);
     switch (incomingChar) {
       case 0x0d:
       case 0x0a:
         // command completed;
         command_string[command_idx] = 0x0;
-        //Serial.println(command_string);
+        Serial.println();
         command_idx = 0;
         if (parseCommand(command_string)) {
           Serial.println("OK");
@@ -181,6 +180,7 @@ void commandif() {
         break;
       default:
         if (command_idx < BUFFLEN) {
+          Serial.print(incomingChar);
           command_string[command_idx++] = incomingChar;
         }
     }    
@@ -194,7 +194,7 @@ ISR(PCINT0_vect) {
   pinstate = PINB & pin_mask;
   changed = lastState & ~pinstate;
   lastState = pinstate;
-  now = millis();
+  now = millis(); // TODO: надо что-то придумать с переполнением через 50 дней работы.
   for (byte channel = 0; channel < CHANNELS; channel++) {
     if (changed & 1 << channel) {
       delta = now - state[channel].timemillis;
@@ -214,10 +214,10 @@ ISR(TIMER1_COMPA_vect) {
       state[i].count = 0;
     }
     if (state[i].count > settings[i].guard_time*100) {
-      state[i].off_delay = 2;
+      state[i].off_delay = max(2,state[i].off_delay);
     }
     if (state[i].count > settings[i].short_time*100) {
-      state[i].off_delay = settings[i].off_delay + 1;
+      state[i].off_delay = max(settings[i].off_delay + 1,state[i].off_delay);
     }
     if (state[i].off_delay > 0) {
       state[i].off_delay--;
