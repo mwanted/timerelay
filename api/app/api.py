@@ -103,12 +103,12 @@ def setState():
 if __name__ == '__main__':
 	try: 
 		ser = serial.Serial(
-			port='COM3',
+			port='/dev/ttyUSB0',
 			baudrate=57600,
 			timeout=1
 		)
 	except serial.serialutil.SerialException as e:
 		print(e)
 		exit()
-	run(host='localhost', port=8088, debug=True)
+	run(host='0.0.0.0', port=8088, debug=True)
 	
