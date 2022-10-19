@@ -28,6 +28,7 @@ struct STATE {
 volatile CHANNEL settings[CHANNELS];
 volatile STATE state[CHANNELS];
 volatile byte pin_mask = 0;
+volatile bool humanMode = true;
 
 void writeEEPROM() {
   EEPROM.put(EEPROMOFFSET,settings);
@@ -54,30 +55,42 @@ void readEEPROM() {
 
 void printSettings() {
   char buffer[40];
-  for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: guard_time: %u",'A'+i,settings[i].guard_time); Serial.println(buffer);
-    sprintf(buffer,"%c: short_time: %u",'A'+i,settings[i].short_time); Serial.println(buffer);
-    sprintf(buffer,"%c: off_delay:  %u",'A'+i,settings[i].off_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: mode:       %u",'A'+i,settings[i].mode); Serial.println(buffer);
+  if (humanMode) {
+    for (int i = 0; i < CHANNELS; i++) {
+      sprintf(buffer,"%c: guard_time: %u",'A'+i,settings[i].guard_time); Serial.println(buffer);
+      sprintf(buffer,"%c: short_time: %u",'A'+i,settings[i].short_time); Serial.println(buffer);
+      sprintf(buffer,"%c: off_delay:  %u",'A'+i,settings[i].off_delay); Serial.println(buffer);
+      sprintf(buffer,"%c: mode:       %u",'A'+i,settings[i].mode); Serial.println(buffer);
+    }
+  } else {
+    for (int i = 0; i < CHANNELS; i++) {
+      sprintf(buffer,"%c,%u,%u,%u,%u",'A'+i,settings[i].guard_time,settings[i].short_time,settings[i].off_delay,settings[i].mode); Serial.println(buffer);
+    }
+  }
+}
+
+void printState_c(int i) {
+  char buffer[40];
+  if (humanMode) {
+    sprintf(buffer,"%c: off_delay: %u",'A'+i,state[i].off_delay); Serial.println(buffer);
+    sprintf(buffer,"%c: mode:      %u",'A'+i,state[i].mode); Serial.println(buffer);
+    sprintf(buffer,"%c: count:     %u",'A'+i,state[i].count); Serial.println(buffer);
+  } else {
+    sprintf(buffer,"%c,%u,%u,%u",'A'+i,state[i].off_delay,state[i].mode,state[i].count); Serial.println(buffer);
   }
 }
 
 void printState() {
-  char buffer[40];
-  for (int i = 0; i < CHANNELS; i++) {
-    sprintf(buffer,"%c: off_delay: %u",'A'+i,state[i].off_delay); Serial.println(buffer);
-    sprintf(buffer,"%c: mode:      %u",'A'+i,state[i].mode); Serial.println(buffer);
-    sprintf(buffer,"%c: count:     %u",'A'+i,state[i].count); Serial.println(buffer);
-  }  
+  for (int i = 0; i < CHANNELS; i++) printState_c(i);
 }
 
 byte bits(byte exponent)
 {
-    byte product = 0;
-    while (exponent--) {
-      product |= 1 << exponent;
-    }
-    return product;
+  byte product = 0;
+  while (exponent--) {
+    product |= 1 << exponent;
+  }
+  return product;
 }
 
 bool parseInteger(unsigned int *data, char *chars, bool zero = false) {
@@ -154,6 +167,19 @@ bool parseCommand(char *command) {
           // Get
           printState();
           return true;
+        default:
+          return false;
+      }
+    case 'm':
+      switch (command[1]) {
+        case 'h':
+          humanMode = true;
+          return true;
+        case 'm':
+          humanMode = false;
+          return true;
+        default:
+          return false;
       }
   }
   return false;
@@ -170,17 +196,19 @@ void commandif() {
       case 0x0a:
         // command completed;
         command_string[command_idx] = 0x0;
-        Serial.println();
-        command_idx = 0;
-        if (parseCommand(command_string)) {
-          Serial.println("OK");
-        } else {
-          Serial.println("ERROR");
+        if (command_idx > 0) {
+          if (humanMode) Serial.println();
+          command_idx = 0;
+          if (parseCommand(command_string)) {
+            Serial.println("OK");
+          } else {
+            Serial.println("ERROR");
+          }
         }
         break;
       default:
         if (command_idx < BUFFLEN) {
-          Serial.print(incomingChar);
+          if (humanMode) Serial.print(incomingChar);
           command_string[command_idx++] = incomingChar;
         }
     }    
@@ -209,6 +237,7 @@ ISR(PCINT0_vect) {
 
 ISR(TIMER1_COMPA_vect) {
   unsigned long now = millis();
+  unsigned long now2 = micros();
   for (byte i = 0; i <  CHANNELS; i++) {
     if (now - state[i].timemillis > 1000) {
       state[i].count = 0;
@@ -221,8 +250,12 @@ ISR(TIMER1_COMPA_vect) {
     }
     if (state[i].off_delay > 0) {
       state[i].off_delay--;
+      if (!humanMode) {
+        Serial.print("*,"); printState_c(i);
+      }
     }
   }
+  Serial.println(micros() - now2);
 }
 
 void setup() {
