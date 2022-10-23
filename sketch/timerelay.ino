@@ -21,6 +21,7 @@ struct CHANNEL {
 struct STATE {
   unsigned int off_delay;
   byte mode;
+  byte lastMode;
   unsigned int count;
   unsigned long timemillis;
 };
@@ -64,7 +65,7 @@ void printSettings() {
     }
   } else {
     for (int i = 0; i < CHANNELS; i++) {
-      sprintf(buffer,"%c,%u,%u,%u,%u",'A'+i,settings[i].guard_time,settings[i].short_time,settings[i].off_delay,settings[i].mode); Serial.println(buffer);
+      sprintf(buffer,"P,%c,%u,%u,%u,%u",'A'+i,settings[i].guard_time,settings[i].short_time,settings[i].off_delay,settings[i].mode); Serial.println(buffer);
     }
   }
 }
@@ -76,7 +77,7 @@ void printState_c(int i) {
     sprintf(buffer,"%c: mode:      %u",'A'+i,state[i].mode); Serial.println(buffer);
     sprintf(buffer,"%c: count:     %u",'A'+i,state[i].count); Serial.println(buffer);
   } else {
-    sprintf(buffer,"%c,%u,%u,%u",'A'+i,state[i].off_delay,state[i].mode,state[i].count); Serial.println(buffer);
+    sprintf(buffer,"S,%c,%u,%u,%u",'A'+i,state[i].off_delay,state[i].mode,state[i].count); Serial.println(buffer);
   }
 }
 
@@ -237,7 +238,6 @@ ISR(PCINT0_vect) {
 
 ISR(TIMER1_COMPA_vect) {
   unsigned long now = millis();
-  unsigned long now2 = micros();
   for (byte i = 0; i <  CHANNELS; i++) {
     if (now - state[i].timemillis > 1000) {
       state[i].count = 0;
@@ -251,11 +251,10 @@ ISR(TIMER1_COMPA_vect) {
     if (state[i].off_delay > 0) {
       state[i].off_delay--;
       if (!humanMode) {
-        Serial.print("*,"); printState_c(i);
+        printState_c(i);
       }
     }
   }
-  Serial.println(micros() - now2);
 }
 
 void setup() {
@@ -293,6 +292,10 @@ void setup() {
 void loop() {
   for (byte i = 0; i < CHANNELS; i++) {
     state[i].mode = ~bitRead(settings[i].mode,1) & (bitRead(settings[i].mode,0) | state[i].off_delay > 0);
+    if (state[i].mode != state[i].lastMode) {
+      state[i].lastMode = state[i].mode;
+      if (!humanMode & state[i].mode == 0) printState_c(i);
+    }
     digitalWrite(i+2,state[i].mode);
   }
   commandif();

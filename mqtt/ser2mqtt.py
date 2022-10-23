@@ -12,7 +12,7 @@ connection = {
 	"broker": '172.16.2.62',
 	"port": 1883,
 	"topic": "python/mqtt",
-	"client_id": f'python-mqtt',
+	"client_id": f'python-mqtt-serial',
 	# username: 'emqx'
 	# password: 'public'
 	"serial_port": "COM3",
