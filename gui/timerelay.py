@@ -6,7 +6,11 @@ import wx
 from paho.mqtt import client as mqtt_client
 import logging
 import logging.config
+import configparser
 
+configFile = "timerelay.conf"
+
+"""
 connection = {
 	"broker": '172.16.2.62',
 	"port": 1883,
@@ -17,6 +21,7 @@ connection = {
 	
 	"channel": "A"
 }
+"""
 
 class mqttEvent(wx.PyEvent):
 	"""Simple event to carry arbitrary result data."""
@@ -28,39 +33,40 @@ class mqttEvent(wx.PyEvent):
 
 class mqtt:
 	def __init__(self,conninfo):
-		self.topic_data = conninfo["topic"] + "-data"
-		self.topic_commands = conninfo["topic"] + "-commands"
+		self.topic_data = conninfo["parenttopic"] + "data"
+		self.topic_commands = conninfo["parenttopic"] + "commands"
 		self.client = mqtt_client.Client(conninfo["client_id"])
 		self.client.enable_logger(logger)
 		self.client.on_connect = self.on_connect
 		self.client.on_message = self.on_message
-		self.client.connect(conninfo["broker"], conninfo["port"])
+		self.client.connect(conninfo["broker"], int(conninfo["port"]))
 		self.client.loop_start()
 		self.client.subscribe(self.topic_data, qos=0)
 
 	def on_connect(self, client, userdata, flags, rc):
 		if rc == 0:
-			print("Connected to MQTT Broker!")
+			logger.info("Connected to MQTT Broker!")
 		else:
-			print("Failed to connect, return code %d\n", rc)	
+			logger.critical("Failed to connect, return code %d\n", rc)
+			exit()	
 
 	def on_message(self, client, userdata, message):
 		try:
 			wx.PostEvent(self.wxObject, mqttEvent(message.payload.decode('ASCII')))
 		except ValueError as e:
-			print(e)
-		print("Received message '" + str(message.payload) + "' on topic '" + message.topic + "' with QoS " + str(message.qos))
+			logger.debug(e)
+		logger.info("Received message '" + str(message.payload) + "' on topic '" + message.topic + "' with QoS " + str(message.qos))
 
 	def publish(self,msg):
 		result = self.client.publish(self.topic_commands, msg)
 		status = result[0]		
 		if status == 0:
-			print(f"Send `{msg}` to topic `{self.topic_data}`")
+			logger.info(f"Send `{msg}` to topic `{self.topic_commands}`")
 		else:
-			print(f"Failed to send message to topic {self.topic_data}")
+			logger.debug(f"Failed to send message to topic {self.topic_commands}")
 
 	def __del__(self):
-		self.client.loop_stop(force=True)
+		if hasattr(self,"client"): self.client.loop_stop(force=True)
 
 
 class MyFrame(wx.Frame):
@@ -204,10 +210,10 @@ class MyFrame(wx.Frame):
 		guardTime = self.inputGuardTime.GetValue()
 		shortTime = self.inputShortTime.GetValue()
 		delayTime = self.inputDelayTime.GetValue()
-		self.mqtt.publish("ps" + connection["channel"] + "m" + str(mode))
-		self.mqtt.publish("ps" + connection["channel"] + "g" + str(guardTime))
-		self.mqtt.publish("ps" + connection["channel"] + "s" + str(shortTime))
-		self.mqtt.publish("ps" + connection["channel"] + "d" + str(delayTime))
+		self.mqtt.publish("ps" + config["mqtt"]["channel"] + "m" + str(mode))
+		self.mqtt.publish("ps" + config["mqtt"]["channel"] + "g" + str(guardTime))
+		self.mqtt.publish("ps" + config["mqtt"]["channel"] + "s" + str(shortTime))
+		self.mqtt.publish("ps" + config["mqtt"]["channel"] + "d" + str(delayTime))
 		self.mqtt.publish("pg")
 		
 	def onWriteButton(self, event):
@@ -219,12 +225,10 @@ class MyFrame(wx.Frame):
 		if btn == self.sendStateSeconds:
 			data = int(self.inputSeconds.GetValue())
 			self.inputSeconds.SetValue("")
-			print(data,"seconds!")
 		if btn == self.sendStateMinutes:
 			data = int(self.inputMinutes.GetValue())*60
 			self.inputMinutes.SetValue("")
-			print(data,"seconds!")
-		self.mqtt.publish("ss" + connection["channel"] + str(data));
+		self.mqtt.publish("ss" + config["mqtt"]["channel"] + str(data));
 
 	def onMQTTMessage(self,msg):
 		def displayState(self,state):
@@ -237,7 +241,6 @@ class MyFrame(wx.Frame):
 				self.currentState.SetLabel(u"ВЫКЛ")
 			
 		def displayProperties(self,props):
-			print("props",props)
 			pmode = [u"Авто",u"Вкл",u"Выкл"]
 			self.inputGuardTime.SetValue(props[0])
 			self.inputShortTime.SetValue(props[1])
@@ -251,7 +254,7 @@ class MyFrame(wx.Frame):
 			logger.debug(f"Receive ERROR message from device`")
 		else: 
 			parsed = data.split(",")
-			if parsed[1] == connection["channel"]:
+			if parsed[1] == config["mqtt"]["channel"]:
 				if parsed[0] == "P":
 					displayProperties(self,parsed[2:])
 				if parsed[0] == "S":
@@ -261,7 +264,7 @@ class MyFrame(wx.Frame):
 class MyApp(wx.App):
 	def OnInit(self):
 		self.frame = MyFrame(None, wx.ID_ANY, "")
-		self.frame.mqtt = mqtt(connection)
+		self.frame.mqtt = mqtt(config["mqtt"])
 		self.frame.mqtt.wxObject = self.frame
 
 		self.frame.Connect(-1, -1, EVT_MQTT_ID, self.frame.onMQTTMessage)
@@ -276,8 +279,22 @@ class MyApp(wx.App):
 
 if __name__ == "__main__":
 	global EVT_MQTT_ID
-	logging.config.fileConfig('logging.conf')
-	logger = logging.getLogger("mqtt")
+	global logger
+	global config
+	
+	logging.config.fileConfig(configFile)
+	logger = logging.getLogger("timerelay GUI")
+	config = configparser.ConfigParser()
+	config.read(configFile)
+	try:
+		assert "parenttopic" in config["mqtt"], "\"parenttopic\" is not defined in section [mqtt]"
+		assert "broker" in config["mqtt"], "\"broker\" is not defined in section [mqtt]"
+		assert "port" in config["mqtt"], "\"port\" is not defined in section [mqtt]"
+		assert "channel" in config["mqtt"], "\"channel\" is not defined in section [mqtt]"
+		assert "client_id" in config["mqtt"], "\"client_id\" is not defined in section [mqtt]"
+	except Exception as e:
+		logger.critical(e)
+		exit()
 
 	EVT_MQTT_ID = wx.NewIdRef(count=1)
 
