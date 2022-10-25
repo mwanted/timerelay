@@ -265,7 +265,12 @@ class MyFrame(wx.Frame):
 class MyApp(wx.App):
 	def OnInit(self):
 		self.frame = MyFrame(None, wx.ID_ANY, "")
-		self.frame.mqtt = mqtt(config["mqtt"])
+		
+		try:
+			self.frame.mqtt = mqtt(config["mqtt"])
+		except ConnectionRefusedError as e:
+			logger.critical(e)
+			exit()
 		self.frame.mqtt.wxObject = self.frame
 
 		self.frame.Connect(-1, -1, EVT_MQTT_ID, self.frame.onMQTTMessage)
