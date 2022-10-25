@@ -107,9 +107,10 @@ class MyFrame(wx.Frame):
 		label_3.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 0, "Segoe UI"))
 		grid_sizer_2.Add(label_3, 0, wx.LEFT | wx.RIGHT, 12)
 
-		self.inputSeconds = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_CENTRE)
+		self.inputSeconds = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_CENTRE | wx.TE_PROCESS_ENTER)
 		self.inputSeconds.SetMinSize((70, 23))
 		grid_sizer_2.Add(self.inputSeconds, 0, wx.RIGHT, 12)
+		self.inputSeconds.Bind(wx.EVT_TEXT_ENTER, self.onButton)
 
 		label_4 = wx.StaticText(self.panel_1, wx.ID_ANY, u"секунд")
 		label_4.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 0, "Segoe UI"))
@@ -124,9 +125,10 @@ class MyFrame(wx.Frame):
 		label_2.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 0, "Segoe UI"))
 		grid_sizer_2.Add(label_2, 0, wx.LEFT | wx.RIGHT, 12)
 
-		self.inputMinutes = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_CENTRE)
+		self.inputMinutes = wx.TextCtrl(self.panel_1, wx.ID_ANY, "", style=wx.TE_CENTRE | wx.TE_PROCESS_ENTER)
 		self.inputMinutes.SetMinSize((70, 23))
 		grid_sizer_2.Add(self.inputMinutes, 0, 0, 0)
+		self.inputMinutes.Bind(wx.EVT_TEXT_ENTER, self.onButton)
 
 		label_5 = wx.StaticText(self.panel_1, wx.ID_ANY, u"минут")
 		label_5.SetFont(wx.Font(12, wx.FONTFAMILY_DEFAULT, wx.FONTSTYLE_NORMAL, wx.FONTWEIGHT_NORMAL, 0, "Segoe UI"))
@@ -220,12 +222,11 @@ class MyFrame(wx.Frame):
 		self.mqtt.publish("pw")
 		
 	def onButton(self, event):
-		"""<br/>	Runs the thread<br/>	"""
 		btn = event.GetEventObject()
-		if btn == self.sendStateSeconds:
+		if btn == self.sendStateSeconds or btn == self.inputSeconds:
 			data = int(self.inputSeconds.GetValue())
 			self.inputSeconds.SetValue("")
-		if btn == self.sendStateMinutes:
+		if btn == self.sendStateMinutes or btn == self.inputMinutes:
 			data = int(self.inputMinutes.GetValue())*60
 			self.inputMinutes.SetValue("")
 		self.mqtt.publish("ss" + config["mqtt"]["channel"] + str(data));
