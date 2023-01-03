@@ -7,6 +7,8 @@ from paho.mqtt import client as mqtt_client
 import logging
 import logging.config
 import configparser
+import random
+import string
 
 configFile = "timerelay.conf"
 
@@ -35,7 +37,7 @@ class mqtt:
 	def __init__(self,conninfo):
 		self.topic_data = conninfo["parenttopic"] + "data"
 		self.topic_commands = conninfo["parenttopic"] + "commands"
-		self.client = mqtt_client.Client(conninfo["client_id"])
+		self.client = mqtt_client.Client(conninfo["client_id"] + '-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=10)))
 		self.client.enable_logger(logger)
 		self.client.on_connect = self.on_connect
 		self.client.on_message = self.on_message
@@ -186,7 +188,7 @@ class MyFrame(wx.Frame):
 
 		grid_sizer_1.Add((0, 0), 0, 0, 0)
 
-		self.sendProps = wx.Button(self.panel_1, wx.ID_ANY, u"Отпраить")
+		self.sendProps = wx.Button(self.panel_1, wx.ID_ANY, u"Отправить")
 		grid_sizer_1.Add(self.sendProps, 0, wx.ALIGN_RIGHT, 0)
 		self.sendProps.Bind(wx.EVT_BUTTON, self.onSendButton)
 
